@@ -328,11 +328,6 @@ func ConvertToOpenAIResponse(antigravityResp *AntigravityResponse, model string)
 		content = md.String()
 	}
 
-	// 非流式：thinking 用 <think> 标签包裹
-	if thinkingContent != "" {
-		content = fmt.Sprintf("<think>\n%s\n</think>\n%s", thinkingContent, content)
-	}
-
 	finishReason := "stop"
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
@@ -349,6 +344,7 @@ func ConvertToOpenAIResponse(antigravityResp *AntigravityResponse, model string)
 				Role:      "assistant",
 				Content:   content,
 				ToolCalls: toolCalls,
+				Reasoning: thinkingContent,
 			},
 			FinishReason: &finishReason,
 		}},

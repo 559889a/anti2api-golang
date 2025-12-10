@@ -394,13 +394,16 @@ func (sw *StreamWriter) WriteFinish(reason string, usage *converter.Usage) error
 	return nil
 }
 
-// WriteHeartbeat 写入心跳
+// WriteHeartbeat 写入心跳（使用 SSE 注释格式保持连接）
 func (sw *StreamWriter) WriteHeartbeat() error {
 	sw.WriteRole()
-	chunk := converter.CreateStreamChunk(
-		sw.id, sw.created, sw.model,
-		&converter.Delta{Content: ""},
-		nil, nil,
-	)
-	return WriteStreamData(sw.w, chunk)
+	// 使用 SSE 注释格式，客户端会忽略但连接保持活跃
+	_, err := sw.w.Write([]byte(": heartbeat\n\n"))
+	if err != nil {
+		return err
+	}
+	if f, ok := sw.w.(http.Flusher); ok {
+		f.Flush()
+	}
+	return nil
 }
