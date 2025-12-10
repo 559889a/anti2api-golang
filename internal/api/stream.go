@@ -394,16 +394,14 @@ func (sw *StreamWriter) WriteFinish(reason string, usage *converter.Usage) error
 	return nil
 }
 
-// WriteHeartbeat 写入心跳（使用 SSE 注释格式保持连接）
+// WriteHeartbeat 写入心跳（发送空 delta 更新客户端计时器）
 func (sw *StreamWriter) WriteHeartbeat() error {
 	sw.WriteRole()
-	// 使用 SSE 注释格式，客户端会忽略但连接保持活跃
-	_, err := sw.w.Write([]byte(": heartbeat\n\n"))
-	if err != nil {
-		return err
-	}
-	if f, ok := sw.w.(http.Flusher); ok {
-		f.Flush()
-	}
-	return nil
+	// 发送包含空内容的有效 delta，客户端会识别并更新计时器
+	chunk := converter.CreateStreamChunk(
+		sw.id, sw.created, sw.model,
+		&converter.Delta{},
+		nil, nil,
+	)
+	return WriteStreamData(sw.w, chunk)
 }
