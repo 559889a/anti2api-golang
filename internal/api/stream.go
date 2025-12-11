@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"anti2api-golang/internal/converter"
@@ -185,15 +186,16 @@ func WriteStreamError(w http.ResponseWriter, errMsg string) {
 	WriteStreamDone(w)
 }
 
-// StreamWriter 流式写入器（带 UTF-8 缓冲）
+// StreamWriter 流式写入器（带 UTF-8 缓冲，线程安全）
 type StreamWriter struct {
 	w               http.ResponseWriter
 	id              string
 	created         int64
 	model           string
 	sentRole        bool
-	contentBuffer   []byte // 缓冲不完整的 UTF-8 内容字节
-	reasoningBuffer []byte // 缓冲不完整的 UTF-8 思考字节
+	contentBuffer   []byte     // 缓冲不完整的 UTF-8 内容字节
+	reasoningBuffer []byte     // 缓冲不完整的 UTF-8 思考字节
+	mu              sync.Mutex // 保护并发写入
 }
 
 // NewStreamWriter 创建流式写入器
@@ -207,8 +209,8 @@ func NewStreamWriter(w http.ResponseWriter, id string, created int64, model stri
 	}
 }
 
-// WriteRole 写入角色（首次）
-func (sw *StreamWriter) WriteRole() error {
+// writeRoleLocked 写入角色（内部使用，调用者必须持有锁）
+func (sw *StreamWriter) writeRoleLocked() error {
 	if sw.sentRole {
 		return nil
 	}
@@ -220,6 +222,13 @@ func (sw *StreamWriter) WriteRole() error {
 		nil, nil,
 	)
 	return WriteStreamData(sw.w, chunk)
+}
+
+// WriteRole 写入角色（首次，线程安全）
+func (sw *StreamWriter) WriteRole() error {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.writeRoleLocked()
 }
 
 // extractValidUTF8 从字节切片中提取有效的 UTF-8 字符串，返回有效部分和剩余的不完整字节
@@ -289,9 +298,12 @@ func extractValidUTF8(data []byte) (valid string, remaining []byte) {
 	return "", remaining
 }
 
-// WriteContent 写入内容（带 UTF-8 缓冲）
+// WriteContent 写入内容（带 UTF-8 缓冲，线程安全）
 func (sw *StreamWriter) WriteContent(content string) error {
-	sw.WriteRole()
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	sw.writeRoleLocked()
 
 	// 合并缓冲区和新内容
 	data := append(sw.contentBuffer, []byte(content)...)
@@ -314,9 +326,12 @@ func (sw *StreamWriter) WriteContent(content string) error {
 	return WriteStreamData(sw.w, chunk)
 }
 
-// WriteReasoning 写入思考内容（带 UTF-8 缓冲）
+// WriteReasoning 写入思考内容（带 UTF-8 缓冲，线程安全）
 func (sw *StreamWriter) WriteReasoning(reasoning string) error {
-	sw.WriteRole()
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	sw.writeRoleLocked()
 
 	// 合并缓冲区和新内容
 	data := append(sw.reasoningBuffer, []byte(reasoning)...)
@@ -339,9 +354,12 @@ func (sw *StreamWriter) WriteReasoning(reasoning string) error {
 	return WriteStreamData(sw.w, chunk)
 }
 
-// WriteToolCalls 写入工具调用
+// WriteToolCalls 写入工具调用（线程安全）
 func (sw *StreamWriter) WriteToolCalls(toolCalls []converter.OpenAIToolCall) error {
-	sw.WriteRole()
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	sw.writeRoleLocked()
 	chunk := converter.CreateStreamChunk(
 		sw.id, sw.created, sw.model,
 		&converter.Delta{ToolCalls: toolCalls},
@@ -350,8 +368,8 @@ func (sw *StreamWriter) WriteToolCalls(toolCalls []converter.OpenAIToolCall) err
 	return WriteStreamData(sw.w, chunk)
 }
 
-// Flush 刷新缓冲区中剩余的内容
-func (sw *StreamWriter) Flush() error {
+// flushLocked 刷新缓冲区中剩余的内容（内部使用，调用者必须持有锁）
+func (sw *StreamWriter) flushLocked() error {
 	// 刷新内容缓冲区
 	if len(sw.contentBuffer) > 0 {
 		content := string(sw.contentBuffer)
@@ -387,10 +405,20 @@ func (sw *StreamWriter) Flush() error {
 	return nil
 }
 
-// WriteFinish 写入结束
+// Flush 刷新缓冲区中剩余的内容（线程安全）
+func (sw *StreamWriter) Flush() error {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.flushLocked()
+}
+
+// WriteFinish 写入结束（线程安全）
 func (sw *StreamWriter) WriteFinish(reason string, usage *converter.Usage) error {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
 	// 先刷新缓冲区
-	sw.Flush()
+	sw.flushLocked()
 
 	chunk := converter.CreateStreamChunk(
 		sw.id, sw.created, sw.model,
@@ -404,13 +432,19 @@ func (sw *StreamWriter) WriteFinish(reason string, usage *converter.Usage) error
 	return nil
 }
 
-// WriteHeartbeat 写入心跳（发送空 delta 更新客户端计时器）
+// WriteHeartbeat 写入心跳（发送空 delta 的有效数据包，线程安全）
 func (sw *StreamWriter) WriteHeartbeat() error {
-	sw.WriteRole()
-	// 发送包含空内容的有效 delta，客户端会识别并更新计时器
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	// 先确保 role 已发送
+	sw.writeRoleLocked()
+
+	// 发送空 delta 的数据包（与 hajimi 格式一致）
+	// 输出格式：{"id":"...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{},"finish_reason":null}]}
 	chunk := converter.CreateStreamChunk(
 		sw.id, sw.created, sw.model,
-		&converter.Delta{},
+		&converter.Delta{}, // 空 delta
 		nil, nil,
 	)
 	return WriteStreamData(sw.w, chunk)

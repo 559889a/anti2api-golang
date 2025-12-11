@@ -184,16 +184,19 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.
 }
 
 func handleBypassStream(w http.ResponseWriter, r *http.Request, req *converter.OpenAIChatRequest, token *store.Account) {
-	// 设置流式响应头
-	api.SetStreamHeaders(w)
-
 	id := utils.GenerateChatCompletionID()
 	created := time.Now().Unix()
 	model := req.Model
 
+	// NewStreamWriter 内部会设置响应头
 	streamWriter := api.NewStreamWriter(w, id, created, model)
 
-	// 启动心跳
+	// 立即发送第一个心跳，确保客户端计时器启动
+	if err := streamWriter.WriteHeartbeat(); err != nil {
+		return
+	}
+
+	// 启动心跳 goroutine
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
@@ -203,13 +206,12 @@ func handleBypassStream(w http.ResponseWriter, r *http.Request, req *converter.O
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
-		// 立即发送第一个心跳
-		streamWriter.WriteHeartbeat()
-
 		for {
 			select {
 			case <-ticker.C:
-				streamWriter.WriteHeartbeat()
+				if err := streamWriter.WriteHeartbeat(); err != nil {
+					return
+				}
 			case <-done:
 				return
 			case <-ctx.Done():

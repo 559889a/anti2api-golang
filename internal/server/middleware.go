@@ -11,7 +11,7 @@ import (
 	"anti2api-golang/internal/logger"
 )
 
-// responseWriter 包装器用于捕获状态码
+// responseWriter 包装器用于捕获状态码（同时支持 Flusher 接口）
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -20,6 +20,13 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Flush 实现 http.Flusher 接口，支持流式响应
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // RequestLogger 请求日志中间件
