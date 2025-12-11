@@ -14,8 +14,8 @@ type AntigravityRequest struct {
 
 // AntigravityInnerReq 内部请求体
 type AntigravityInnerReq struct {
-	Contents          []Content          `json:"contents"`
 	SystemInstruction *SystemInstruction `json:"systemInstruction,omitempty"`
+	Contents          []Content          `json:"contents"`
 	Tools             []Tool             `json:"tools,omitempty"`
 	ToolConfig        *ToolConfig        `json:"toolConfig,omitempty"`
 	GenerationConfig  *GenerationConfig  `json:"generationConfig,omitempty"`

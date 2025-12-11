@@ -53,16 +53,26 @@ func ProcessStreamResponse(resp *http.Response, callback func(chunk StreamChunk)
 		reader = gzReader
 	}
 
-	scanner := bufio.NewScanner(reader)
-	// 增大缓冲区以处理大的响应（16MB，支持图像生成等大数据）
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 16*1024*1024)
+	// 使用较小的缓冲区以减少延迟（4KB）
+	bufReader := bufio.NewReaderSize(reader, 4*1024)
 
 	var usage *converter.UsageMetadata
 	var toolCalls []converter.OpenAIToolCall
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		// ReadString 会在读到分隔符时立即返回，不会等待缓冲区填满
+		line, err := bufReader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return usage, err
+		}
+
+		// 去掉末尾的换行符
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
+
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
@@ -128,7 +138,7 @@ func ProcessStreamResponse(resp *http.Response, callback func(chunk StreamChunk)
 		callback(StreamChunk{Type: "tool_calls", ToolCalls: toolCalls})
 	}
 
-	return usage, scanner.Err()
+	return usage, nil
 }
 
 // SetStreamHeaders 设置流式响应头
