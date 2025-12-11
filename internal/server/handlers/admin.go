@@ -205,43 +205,103 @@ func HandleSetEndpointMode(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetLogs 获取请求日志
 func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
-	// TODO: 实现日志存储后完善
+	limitStr := r.URL.Query().Get("limit")
+	limit := 200
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	logs := store.GetLogStore().GetAll(limit)
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"logs": []interface{}{},
+		"logs": logs,
 	})
 }
 
 // HandleGetLogDetail 获取日志详情
 func HandleGetLogDetail(w http.ResponseWriter, r *http.Request) {
-	// TODO: 实现日志存储后完善
-	WriteError(w, http.StatusNotFound, "Log not found")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "Missing log ID")
+		return
+	}
+
+	log := store.GetLogStore().GetByID(id)
+	if log == nil {
+		WriteError(w, http.StatusNotFound, "Log not found")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"log": log,
+	})
 }
 
 // HandleGetLogsUsage 获取用量统计
 func HandleGetLogsUsage(w http.ResponseWriter, r *http.Request) {
-	// TODO: 实现统计功能
+	windowMinutes := 60
+	usage := store.GetLogStore().GetUsageStats(windowMinutes)
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"usage":         []interface{}{},
-		"windowMinutes": 60,
+		"usage":         usage,
+		"windowMinutes": windowMinutes,
 	})
 }
 
 // HandleGetUsage 获取使用统计
 func HandleGetUsage(w http.ResponseWriter, r *http.Request) {
-	// TODO: 实现统计功能
+	// 获取全部时间的统计
+	allUsage := store.GetLogStore().GetAllAccountsUsage()
+
+	totalRequests := 0
+	for _, usage := range allUsage {
+		totalRequests += usage.Count
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"requests": 0,
-		"tokens":   0,
+		"requests": totalRequests,
+		"tokens":   0, // Token 统计暂不支持
 	})
 }
 
 // HandleGetAccounts 获取账号列表
 func HandleGetAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts := store.GetAccountStore().GetAll()
+	allUsage := store.GetLogStore().GetAllAccountsUsage()
 
 	// 构建前端期望的格式
 	result := make([]map[string]interface{}, len(accounts))
 	for i, acc := range accounts {
+		// 获取该账号的用量统计（优先用 email 匹配，其次用 projectId）
+		usageData := map[string]interface{}{
+			"total":      0,
+			"success":    0,
+			"failed":     0,
+			"lastUsedAt": nil,
+			"models":     []string{},
+		}
+
+		// 优先按 email 查找，其次按 projectId
+		var usage *store.UsageStats
+		if acc.Email != "" {
+			usage = allUsage[acc.Email]
+		}
+		if usage == nil && acc.ProjectID != "" {
+			usage = allUsage[acc.ProjectID]
+		}
+
+		if usage != nil {
+			usageData["total"] = usage.Count
+			usageData["success"] = usage.Success
+			usageData["failed"] = usage.Failed
+			usageData["models"] = usage.Models
+			if usage.LastUsedAt != nil {
+				usageData["lastUsedAt"] = usage.LastUsedAt.Format(time.RFC3339)
+			}
+		}
+
 		result[i] = map[string]interface{}{
 			"index":     i,
 			"email":     maskEmail(acc.Email),
@@ -249,13 +309,7 @@ func HandleGetAccounts(w http.ResponseWriter, r *http.Request) {
 			"enable":    acc.Enable,
 			"expired":   acc.IsExpired(),
 			"createdAt": acc.CreatedAt.Format(time.RFC3339),
-			"usage": map[string]interface{}{
-				"total":      0,
-				"success":    0,
-				"failed":     0,
-				"lastUsedAt": nil,
-				"models":     []string{},
-			},
+			"usage":     usageData,
 		}
 	}
 

@@ -14,6 +14,38 @@ import (
 	"anti2api-golang/internal/utils"
 )
 
+// recordLog 记录 API 调用日志
+func recordLog(method, path string, req *converter.OpenAIChatRequest, token *store.Account, status int, success bool, duration time.Duration, errMsg string, responseContent string) {
+	entry := store.LogEntry{
+		ID:         utils.GenerateRequestID(),
+		Timestamp:  time.Now(),
+		Status:     status,
+		Success:    success,
+		Model:      req.Model,
+		Method:     method,
+		Path:       path,
+		DurationMs: duration.Milliseconds(),
+		Message:    errMsg,
+		HasDetail:  true,
+		Detail: &store.LogDetail{
+			Request: &store.RequestSnapshot{
+				Body: req,
+			},
+			Response: &store.ResponseSnapshot{
+				StatusCode:  status,
+				ModelOutput: responseContent,
+			},
+		},
+	}
+
+	if token != nil {
+		entry.ProjectID = token.ProjectID
+		entry.Email = token.Email
+	}
+
+	store.GetLogStore().Add(entry)
+}
+
 // HandleGetModels 获取模型列表
 func HandleGetModels(w http.ResponseWriter, r *http.Request) {
 	models := converter.ModelsResponse{
@@ -107,6 +139,8 @@ func handleNonStreamRequest(w http.ResponseWriter, r *http.Request, req *convert
 	if err != nil {
 		duration := time.Since(startTime)
 		logger.ClientResponse(getErrorStatus(err), duration, err.Error())
+		// 记录失败日志
+		recordLog(r.Method, r.URL.Path, req, token, getErrorStatus(err), false, duration, err.Error(), "")
 		WriteError(w, getErrorStatus(err), err.Error())
 		return
 	}
@@ -116,10 +150,20 @@ func handleNonStreamRequest(w http.ResponseWriter, r *http.Request, req *convert
 
 	duration := time.Since(startTime)
 	logger.ClientResponse(http.StatusOK, duration, openAIResp)
+
+	// 记录成功日志
+	responseContent := ""
+	if len(openAIResp.Choices) > 0 {
+		responseContent = openAIResp.Choices[0].Message.Content
+	}
+	recordLog(r.Method, r.URL.Path, req, token, http.StatusOK, true, duration, "", responseContent)
+
 	WriteJSON(w, http.StatusOK, openAIResp)
 }
 
 func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.OpenAIChatRequest, token *store.Account) {
+	startTime := time.Now()
+
 	// 检查是否为 bypass 模式
 	if converter.IsBypassModel(req.Model) {
 		handleBypassStream(w, r, req, token)
@@ -133,8 +177,11 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.
 	ctx := r.Context()
 	resp, err := api.GenerateContentStream(ctx, antigravityReq, token)
 	if err != nil {
+		duration := time.Since(startTime)
 		api.SetStreamHeaders(w)
 		api.WriteStreamError(w, err.Error())
+		// 记录失败日志
+		recordLog(r.Method, r.URL.Path, req, token, getErrorStatus(err), false, duration, err.Error(), "")
 		return
 	}
 
@@ -149,6 +196,7 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.
 
 	var usage *converter.UsageMetadata
 	var toolCalls []converter.OpenAIToolCall
+	var contentBuilder strings.Builder
 
 	// 处理流式响应
 	usage, err = api.ProcessStreamResponse(resp, func(chunk api.StreamChunk) {
@@ -157,6 +205,7 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.
 			streamWriter.WriteReasoning(chunk.Content)
 		case "text":
 			streamWriter.WriteContent(chunk.Content)
+			contentBuilder.WriteString(chunk.Content)
 		case "tool_calls":
 			toolCalls = chunk.ToolCalls
 			streamWriter.WriteToolCalls(chunk.ToolCalls)
@@ -165,8 +214,15 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.
 		}
 	})
 
+	duration := time.Since(startTime)
+
 	if err != nil {
 		logger.Error("Stream processing error: %v", err)
+		// 记录失败日志
+		recordLog(r.Method, r.URL.Path, req, token, http.StatusInternalServerError, false, duration, err.Error(), contentBuilder.String())
+	} else {
+		// 记录成功日志
+		recordLog(r.Method, r.URL.Path, req, token, http.StatusOK, true, duration, "", contentBuilder.String())
 	}
 
 	// 发送结束
@@ -184,6 +240,7 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request, req *converter.
 }
 
 func handleBypassStream(w http.ResponseWriter, r *http.Request, req *converter.OpenAIChatRequest, token *store.Account) {
+	startTime := time.Now()
 	id := utils.GenerateChatCompletionID()
 	created := time.Now().Unix()
 	model := req.Model
@@ -232,13 +289,18 @@ func handleBypassStream(w http.ResponseWriter, r *http.Request, req *converter.O
 	close(done)
 
 	if err != nil {
+		duration := time.Since(startTime)
 		streamWriter.WriteContent("Error: " + err.Error())
 		streamWriter.WriteFinish("stop", nil)
+		// 记录失败日志
+		recordLog(r.Method, r.URL.Path, req, token, getErrorStatus(err), false, duration, err.Error(), "")
 		return
 	}
 
 	// 转换响应
 	openAIResp := converter.ConvertToOpenAIResponse(resp, model)
+
+	duration := time.Since(startTime)
 
 	// 发送完整内容
 	if len(openAIResp.Choices) > 0 {
@@ -260,8 +322,13 @@ func handleBypassStream(w http.ResponseWriter, r *http.Request, req *converter.O
 		}
 
 		streamWriter.WriteFinish(finishReason, openAIResp.Usage)
+
+		// 记录成功日志
+		recordLog(r.Method, r.URL.Path, req, token, http.StatusOK, true, duration, "", msg.Content)
 	} else {
 		streamWriter.WriteFinish("stop", nil)
+		// 记录成功但无内容的日志
+		recordLog(r.Method, r.URL.Path, req, token, http.StatusOK, true, duration, "", "")
 	}
 }
 
