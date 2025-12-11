@@ -29,9 +29,10 @@ type StreamData struct {
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					Text         string                  `json:"text,omitempty"`
-					FunctionCall *converter.FunctionCall `json:"functionCall,omitempty"`
-					Thought      bool                    `json:"thought,omitempty"`
+					Text             string                  `json:"text,omitempty"`
+					FunctionCall     *converter.FunctionCall `json:"functionCall,omitempty"`
+					Thought          bool                    `json:"thought,omitempty"`
+					ThoughtSignature string                  `json:"thoughtSignature,omitempty"` // API 签名
 				} `json:"parts"`
 			} `json:"content"`
 			FinishReason string `json:"finishReason,omitempty"`
@@ -123,6 +124,7 @@ func ProcessStreamResponse(resp *http.Response, callback func(chunk StreamChunk)
 						Name:      part.FunctionCall.Name,
 						Arguments: string(argsJSON),
 					},
+					ThoughtSignature: part.ThoughtSignature, // 保存签名用于后续请求
 				})
 			}
 		}

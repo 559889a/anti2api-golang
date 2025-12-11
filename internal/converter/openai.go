@@ -23,6 +23,9 @@ func ConvertOpenAIToAntigravity(req *OpenAIChatRequest, account *store.Account) 
 		UserAgent: config.Get().UserAgent,
 	}
 
+	// 检查是否有历史函数调用（需要禁用 thinking 模式以避免 thought_signature 问题）
+	hasHistoryFunctionCalls := hasToolCallsInHistory(req.Messages)
+
 	// 转换消息
 	contents := convertMessages(req.Messages)
 
@@ -50,11 +53,21 @@ func ConvertOpenAIToAntigravity(req *OpenAIChatRequest, account *store.Account) 
 		}
 	}
 
-	// 构建生成配置
-	innerReq.GenerationConfig = buildGenerationConfig(req, modelName)
+	// 构建生成配置（如果有历史函数调用，禁用 thinking 模式）
+	innerReq.GenerationConfig = buildGenerationConfig(req, modelName, hasHistoryFunctionCalls)
 
 	antigravityReq.Request = innerReq
 	return antigravityReq
+}
+
+// hasToolCallsInHistory 检查历史消息中是否有函数调用
+func hasToolCallsInHistory(messages []OpenAIMessage) bool {
+	for _, msg := range messages {
+		if len(msg.ToolCalls) > 0 || msg.Role == "tool" {
+			return true
+		}
+	}
+	return false
 }
 
 func getProjectID(account *store.Account) string {
@@ -91,6 +104,7 @@ func convertMessages(messages []OpenAIMessage) []Content {
 						Name: tc.Function.Name,
 						Args: args,
 					},
+					ThoughtSignature: tc.ThoughtSignature, // 回传签名（API必需）
 				})
 			}
 			if len(parts) > 0 {
@@ -209,12 +223,20 @@ func findFunctionName(contents []Content, toolCallID string) string {
 }
 
 func appendFunctionResponse(contents *[]Content, part Part) {
-	// 尝试合并到最后一个 user 消息
-	for i := len(*contents) - 1; i >= 0; i-- {
-		if (*contents)[i].Role == "user" {
-			(*contents)[i].Parts = append((*contents)[i].Parts, part)
-			return
-		}
+	// functionResponse 应该在 functionCall 之后的新 user turn 中
+	// 检查最后一个消息是否是 model 消息（包含 functionCall）
+	if len(*contents) > 0 && (*contents)[len(*contents)-1].Role == "model" {
+		// 在 model 消息后添加新的 user 消息来包含 functionResponse
+		*contents = append(*contents, Content{
+			Role:  "user",
+			Parts: []Part{part},
+		})
+		return
+	}
+	// 如果最后已经是 user 消息，合并 functionResponse（多个 tool 响应的情况）
+	if len(*contents) > 0 && (*contents)[len(*contents)-1].Role == "user" {
+		(*contents)[len(*contents)-1].Parts = append((*contents)[len(*contents)-1].Parts, part)
+		return
 	}
 	// 新建 user 消息
 	*contents = append(*contents, Content{
@@ -243,7 +265,7 @@ func convertTools(tools []OpenAITool) []Tool {
 	return result
 }
 
-func buildGenerationConfig(req *OpenAIChatRequest, modelName string) *GenerationConfig {
+func buildGenerationConfig(req *OpenAIChatRequest, modelName string, hasHistoryFunctionCalls bool) *GenerationConfig {
 	config := &GenerationConfig{
 		CandidateCount: 1,
 		StopSequences:  DefaultStopSequences,
@@ -258,7 +280,8 @@ func buildGenerationConfig(req *OpenAIChatRequest, modelName string) *Generation
 	if IsClaudeModel(modelName) {
 		config.MaxOutputTokens = GetClaudeMaxOutputTokens(modelName)
 		// Claude thinking 模式不支持 topP
-		if ShouldEnableThinking(modelName, nil) {
+		// 如果有历史函数调用，禁用 thinking 模式以避免 thought_signature 问题
+		if !hasHistoryFunctionCalls && ShouldEnableThinking(modelName, nil) {
 			config.ThinkingConfig = BuildThinkingConfig(modelName)
 		}
 		return config
@@ -275,8 +298,8 @@ func buildGenerationConfig(req *OpenAIChatRequest, modelName string) *Generation
 		config.MaxOutputTokens = req.MaxTokens
 	}
 
-	// 思考模式
-	if ShouldEnableThinking(modelName, nil) {
+	// 思考模式（如果有历史函数调用，禁用以避免 thought_signature 问题）
+	if !hasHistoryFunctionCalls && ShouldEnableThinking(modelName, nil) {
 		config.ThinkingConfig = BuildThinkingConfig(modelName)
 	}
 
@@ -309,6 +332,7 @@ func ConvertToOpenAIResponse(antigravityResp *AntigravityResponse, model string)
 					Name:      part.FunctionCall.Name,
 					Arguments: string(argsJSON),
 				},
+				ThoughtSignature: part.ThoughtSignature, // 保存签名用于后续请求
 			})
 		} else if part.InlineData != nil {
 			dataURL := fmt.Sprintf("data:%s;base64,%s", part.InlineData.MimeType, part.InlineData.Data)

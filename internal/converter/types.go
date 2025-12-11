@@ -34,7 +34,8 @@ type Part struct {
 	FunctionCall     *FunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *FunctionResponse `json:"functionResponse,omitempty"`
 	InlineData       *InlineData       `json:"inlineData,omitempty"`
-	Thought          bool              `json:"thought,omitempty"` // 思维链标记
+	Thought          bool              `json:"thought,omitempty"`          // 思维链标记
+	ThoughtSignature string            `json:"thoughtSignature,omitempty"` // 函数调用签名（API必需）
 }
 
 // FunctionCall 函数调用
@@ -179,9 +180,10 @@ type OpenAIFunction struct {
 
 // OpenAIToolCall OpenAI 工具调用
 type OpenAIToolCall struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"` // function
-	Function OpenAIFunctionCall `json:"function"`
+	ID               string             `json:"id"`
+	Type             string             `json:"type"` // function
+	Function         OpenAIFunctionCall `json:"function"`
+	ThoughtSignature string             `json:"thought_signature,omitempty"` // 扩展字段：用于存储API需要的签名
 }
 
 // OpenAIFunctionCall OpenAI 函数调用
