@@ -43,9 +43,12 @@ func NewClient() *Client {
 	cfg := config.Get()
 
 	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second, // 等待响应头的超时
+		// 禁用 HTTP/2 以避免其多路复用带来的流式延迟
+		ForceAttemptHTTP2: false,
 	}
 
 	// 设置代理
@@ -65,7 +68,7 @@ func NewClient() *Client {
 	}
 }
 
-// BuildHeaders 构建请求头
+// BuildHeaders 构建请求头（非流式请求）
 func (c *Client) BuildHeaders(token *store.Account, endpoint config.Endpoint) http.Header {
 	return http.Header{
 		"Host":            {endpoint.Host},
@@ -73,6 +76,17 @@ func (c *Client) BuildHeaders(token *store.Account, endpoint config.Endpoint) ht
 		"Authorization":   {"Bearer " + token.AccessToken},
 		"Content-Type":    {"application/json"},
 		"Accept-Encoding": {"gzip"},
+	}
+}
+
+// BuildStreamHeaders 构建流式请求头（禁用 gzip 以保证流式输出平滑）
+func (c *Client) BuildStreamHeaders(token *store.Account, endpoint config.Endpoint) http.Header {
+	return http.Header{
+		"Host":          {endpoint.Host},
+		"User-Agent":    {c.config.UserAgent},
+		"Authorization": {"Bearer " + token.AccessToken},
+		"Content-Type":  {"application/json"},
+		// 不设置 Accept-Encoding: gzip，避免上游服务器缓冲压缩数据导致流式输出不平滑
 	}
 }
 
@@ -157,7 +171,8 @@ func (c *Client) SendStreamRequest(ctx context.Context, req *converter.Antigravi
 		return nil, err
 	}
 
-	for key, values := range c.BuildHeaders(token, endpoint) {
+	// 流式请求使用专用请求头（禁用 gzip）
+	for key, values := range c.BuildStreamHeaders(token, endpoint) {
 		for _, value := range values {
 			httpReq.Header.Add(key, value)
 		}

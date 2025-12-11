@@ -102,10 +102,10 @@ func BuildThinkingConfig(modelName string) *ThinkingConfig {
 	}
 
 	if IsClaudeModel(actualModel) {
-		// Claude：thinkingBudget 默认 16000
+		// Claude：thinkingBudget 默认 32000
 		return &ThinkingConfig{
 			IncludeThoughts: true,
-			ThinkingBudget:  16000,
+			ThinkingBudget:  32000,
 		}
 	}
 
@@ -118,8 +118,6 @@ func BuildThinkingConfig(modelName string) *ThinkingConfig {
 
 // GetClaudeMaxOutputTokens 获取 Claude 模型最大输出 Token
 func GetClaudeMaxOutputTokens(modelName string) int {
-	if strings.Contains(strings.ToLower(modelName), "opus") {
-		return 32000
-	}
+	// 统一返回 64000
 	return 64000
 }
