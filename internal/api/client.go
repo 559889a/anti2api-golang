@@ -344,7 +344,19 @@ func GenerateContent(ctx context.Context, req *converter.AntigravityRequest, tok
 // GenerateContentStream 流式生成内容
 func GenerateContentStream(ctx context.Context, req *converter.AntigravityRequest, token *store.Account) (*http.Response, error) {
 	client := GetClient()
-	return client.SendStreamRequest(ctx, req, token)
+	var result *http.Response
+	var err error
+
+	retryErr := client.WithRetry(ctx, func() error {
+		result, err = client.SendStreamRequest(ctx, req, token)
+		return err
+	})
+
+	if retryErr != nil {
+		return nil, retryErr
+	}
+
+	return result, nil
 }
 
 // IsRetryableError 检查是否为可重试错误

@@ -123,16 +123,6 @@ func handleNonStreamRequest(w http.ResponseWriter, r *http.Request, req *convert
 	// 转换请求
 	antigravityReq := converter.ConvertOpenAIToAntigravity(req, token)
 
-	// 图片模型特殊处理
-	if converter.IsImageModel(req.Model) {
-		antigravityReq.RequestType = "image_gen"
-		if antigravityReq.Request.SystemInstruction != nil && len(antigravityReq.Request.SystemInstruction.Parts) > 0 {
-			antigravityReq.Request.SystemInstruction.Parts[0].Text += "（当前作为图像生成模型使用，请根据描述生成图片）"
-		}
-		antigravityReq.Request.Tools = nil
-		antigravityReq.Request.ToolConfig = nil
-	}
-
 	// 发送请求
 	ctx := r.Context()
 	resp, err := api.GenerateContent(ctx, antigravityReq, token)

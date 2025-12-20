@@ -9,7 +9,7 @@ type AntigravityRequest struct {
 	Request     AntigravityInnerReq `json:"request"`
 	Model       string              `json:"model"`
 	UserAgent   string              `json:"userAgent"`
-	RequestType string              `json:"requestType,omitempty"` // image_gen 等
+	RequestType string              `json:"requestType,omitempty"`
 }
 
 // AntigravityInnerReq 内部请求体

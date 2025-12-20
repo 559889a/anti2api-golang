@@ -161,7 +161,7 @@ func handleGeminiStreamGenerateContent(w http.ResponseWriter, r *http.Request, m
 		reader = gzReader
 	}
 
-	// 转发流式数据（16MB缓冲区，支持图像生成等大数据）
+	// 转发流式数据（16MB缓冲区）
 	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 16*1024*1024)
@@ -265,7 +265,7 @@ func handleRawGeminiStreamGenerateContent(w http.ResponseWriter, r *http.Request
 		reader = gzReader
 	}
 
-	// 直接转发原始流式数据（不转换，16MB缓冲区支持图像生成）
+	// 直接转发原始流式数据（不转换，16MB缓冲区）
 	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 16*1024*1024)

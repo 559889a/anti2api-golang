@@ -14,7 +14,6 @@ var SupportedModels = []Model{
 	// Gemini 系列
 	{ID: "gemini-3-pro-high", OwnedBy: "google", Object: "model"},
 	{ID: "gemini-3-pro-low", OwnedBy: "google", Object: "model"},
-	{ID: "gemini-3-pro-image", OwnedBy: "google", Object: "model"},
 	// Gemini Bypass 模式（非流式规避截断）
 	{ID: "gemini-3-pro-high-bypass", OwnedBy: "google", Object: "model"},
 	{ID: "gemini-3-pro-low-bypass", OwnedBy: "google", Object: "model"},
@@ -52,11 +51,6 @@ func IsBypassModel(modelName string) bool {
 	return strings.HasSuffix(modelName, "-bypass")
 }
 
-// IsImageModel 检测是否为图片模型
-func IsImageModel(modelName string) bool {
-	return strings.Contains(modelName, "-image")
-}
-
 // IsClaudeModel 检测是否为 Claude 模型
 func IsClaudeModel(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "claude")
@@ -80,7 +74,7 @@ func ShouldEnableThinking(modelName string, thinkingConfig *ThinkingConfig) bool
 	}
 
 	// Gemini 3 Pro 系列默认启用
-	if strings.HasPrefix(modelName, "gemini-3-pro-") && !strings.Contains(modelName, "-image") {
+	if strings.HasPrefix(modelName, "gemini-3-pro-") {
 		return true
 	}
 
