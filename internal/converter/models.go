@@ -14,6 +14,9 @@ var SupportedModels = []Model{
 	// Gemini 系列
 	{ID: "gemini-3-pro-high", OwnedBy: "google", Object: "model"},
 	{ID: "gemini-3-pro-low", OwnedBy: "google", Object: "model"},
+	// Gemini 3 Flash 系列
+	{ID: "gemini-3-flash", OwnedBy: "google", Object: "model"},
+	{ID: "gemini-3-flash-bypass", OwnedBy: "google", Object: "model"},
 	// Gemini Bypass 模式（非流式规避截断）
 	{ID: "gemini-3-pro-high-bypass", OwnedBy: "google", Object: "model"},
 	{ID: "gemini-3-pro-low-bypass", OwnedBy: "google", Object: "model"},
@@ -27,6 +30,7 @@ var SupportedModels = []Model{
 var ModelAliasMap = map[string]string{
 	"gemini-3-pro-high-bypass": "gemini-3-pro-high",
 	"gemini-3-pro-low-bypass":  "gemini-3-pro-low",
+	"gemini-3-flash-bypass":    "gemini-3-flash",
 }
 
 // DefaultStopSequences 默认停止序列
