@@ -33,7 +33,7 @@ func HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 				{"key": "PORT", "label": "服务端口", "value": cfg.Port, "isDefault": cfg.Port == 8045, "defaultValue": 8045},
 				{"key": "HOST", "label": "监听地址", "value": cfg.Host, "isDefault": cfg.Host == "0.0.0.0", "defaultValue": "0.0.0.0"},
 				{"key": "PROXY", "label": "代理地址", "value": valueOrDefault(cfg.Proxy, "未设置"), "isDefault": cfg.Proxy == ""},
-				{"key": "TIMEOUT", "label": "请求超时(ms)", "value": cfg.Timeout, "isDefault": cfg.Timeout == 180000, "defaultValue": 180000},
+				{"key": "TIMEOUT", "label": "请求超时(ms)", "value": cfg.Timeout, "isDefault": cfg.Timeout == 600000, "defaultValue": 600000},
 			},
 		},
 		{

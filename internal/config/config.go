@@ -91,7 +91,7 @@ func Load() *Config {
 			Port:               getEnvInt("PORT", 8045),
 			Host:               getEnv("HOST", "0.0.0.0"),
 			UserAgent:          getEnv("API_USER_AGENT", "antigravity/1.11.3 windows/amd64"),
-			Timeout:            getEnvInt("TIMEOUT", 180000),
+			Timeout:            getEnvInt("TIMEOUT", 600000),
 			Proxy:              getEnv("PROXY", ""),
 			APIKey:             getEnv("API_KEY", ""),
 			PanelUser:          getEnv("PANEL_USER", "admin"),

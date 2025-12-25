@@ -46,7 +46,7 @@ func NewClient() *Client {
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   10,
 		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second, // 等待响应头的超时
+		ResponseHeaderTimeout: time.Duration(cfg.Timeout) * time.Millisecond, // 使用全局超时配置
 		// 禁用 HTTP/2 以避免其多路复用带来的流式延迟
 		ForceAttemptHTTP2: false,
 	}
